@@ -176,7 +176,7 @@ Return the response in JSON matching the schema provided.
     };
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: {
         parts: [mediaPart, { text: promptText }],
       },

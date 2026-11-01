@@ -1,14 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/transcribe",
-      "destination": "/api/transcribe"
-    },
-    {
-      "source": "/api/status",
-      "destination": "/api/status"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

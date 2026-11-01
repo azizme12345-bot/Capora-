@@ -74,11 +74,19 @@ export async function extractAudioBase64(file: File): Promise<string | null> {
     // Decode audio data
     const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     
-    // Downsample to 16kHz mono using an OfflineAudioContext
-    const targetSampleRate = 16000;
+    // Choose optimal sample rate based on duration to guarantee payload stays strictly under Vercel's 4.5MB ceiling
+    const durationSec = decodedBuffer.duration || 1;
+    let targetSampleRate = 16000;
+    if (durationSec > 120) {
+      targetSampleRate = 8000; // 8kHz mono is standard telephony speech bandwidth
+    } else if (durationSec > 60) {
+      targetSampleRate = 12000; // 12kHz mono
+    }
+
+    const maxDurationToRender = Math.min(durationSec, 300); // Up to 5 minutes per transcription pass
     const offlineCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
       1,
-      Math.ceil(decodedBuffer.duration * targetSampleRate),
+      Math.ceil(maxDurationToRender * targetSampleRate),
       targetSampleRate
     );
 

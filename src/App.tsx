@@ -449,17 +449,18 @@ export default function App() {
         detectMode,
       };
 
-      // If file is <= 25MB (like 14-second or short video/audio clips), convert directly to base64
-      if (targetMedia?.localFile && targetMedia.localFile.size <= 25 * 1024 * 1024) {
-        const fBase64 = await fileToBase64(targetMedia.localFile);
-        payload.fileBase64 = fBase64;
-        payload.mimeType = targetMedia.localFile.type || (targetMedia.hasVideo ? 'video/mp4' : 'audio/wav');
-      } else if (targetMedia?.localFile) {
-        setStatusMessage('Extracting audio track for transcription...');
+      // Always extract lightweight mono audio track first to stay strictly below Vercel's 4.5MB request limit
+      if (targetMedia?.localFile) {
+        setStatusMessage('Extracting clean speech audio track for Gemini AI...');
         const aBase64 = await extractAudioBase64(targetMedia.localFile);
         if (aBase64) {
           payload.audioBase64 = aBase64;
           payload.mimeType = 'audio/wav';
+        } else if (targetMedia.localFile.size <= 3 * 1024 * 1024) {
+          // Fallback if browser audio decoding was unavailable and file is small (<= 3MB)
+          const fBase64 = await fileToBase64(targetMedia.localFile);
+          payload.fileBase64 = fBase64;
+          payload.mimeType = targetMedia.localFile.type || (targetMedia.hasVideo ? 'video/mp4' : 'audio/wav');
         }
       } else if (targetMedia?.filename) {
         payload.mediaFilename = videoMedia?.filename;
@@ -478,6 +479,11 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await res.text();
+        if (text.includes('413') || text.includes('Payload Too Large')) {
+          throw new Error('Media payload too large. Please use a shorter clip.');
+        } else if (text.includes('The page c') || text.includes('404')) {
+          throw new Error('Serverless function warming up or endpoint missing. Please verify GEMINI_API_KEY in Vercel.');
+        }
         throw new Error(text.slice(0, 100) || `Server returned ${res.status}`);
       }
 
@@ -696,6 +702,12 @@ export default function App() {
         }),
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        throw new Error(text.slice(0, 100) || `Server returned ${res.status}`);
+      }
+
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to start export');
@@ -714,7 +726,8 @@ export default function App() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/export/${jobId}`);
-        if (!res.ok) return;
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) return;
         const job: RenderJob = await res.json();
         setActiveRenderJob(job);
 
@@ -741,6 +754,10 @@ export default function App() {
     setStatusMessage('Retrying export...');
     try {
       const res = await fetch(`/api/export/${activeRenderJob.id}/retry`, { method: 'POST' });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Server returned ${res.status}`);
+      }
       const data = await res.json();
       if (res.ok && data.jobId) {
         pollExportJob(data.jobId);
