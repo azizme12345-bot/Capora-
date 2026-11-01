@@ -34,8 +34,9 @@ export interface TranscribeOptions {
   detectMode: 'auto' | 'strict';
 }
 
-export async function transcribeMedia(
-  mediaFilePath: string,
+export async function transcribeAudioBase64(
+  base64Audio: string,
+  mimeType: string,
   options: TranscribeOptions
 ): Promise<{ captions: CaptionItem[]; detectedLanguage: string }> {
   const ai = getGeminiClient();
@@ -43,60 +44,51 @@ export async function transcribeMedia(
     throw new Error('GEMINI_API_KEY is not configured on the server. Please add it to your environment secrets.');
   }
 
-  // 1. Extract audio to a temporary file
-  const tempAudioDir = path.resolve(process.cwd(), 'data', 'temp');
-  if (!fs.existsSync(tempAudioDir)) {
-    fs.mkdirSync(tempAudioDir, { recursive: true });
-  }
-  const tempAudioPath = path.join(tempAudioDir, `transcribe_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp3`);
-
-  try {
-    await extractAudioTrack(mediaFilePath, tempAudioPath);
-    const audioBuffer = fs.readFileSync(tempAudioPath);
-    const base64Audio = audioBuffer.toString('base64');
-
-    // 2. Build detailed instruction for Gemini
-    let languageInstruction = '';
-    if (options.language === 'roman-ur') {
-      languageInstruction = `
-CRITICAL LANGUAGE REQUIREMENT: Transcribe spoken Urdu strictly into ROMAN URDU (Urdu words written using the Latin/English alphabet, e.g., 'Aap kaise hain', 'Yeh bohot acha hai', 'Hum kal milenge').
+  // Build detailed instruction for Gemini
+  let languageInstruction = '';
+  if (options.language === 'roman-ur') {
+    languageInstruction = `
+CRITICAL LANGUAGE REQUIREMENT: Transcribe spoken Urdu strictly into ROMAN URDU (Urdu words written using the Latin/English alphabet, e.g., 'Aap kaise hain', 'Yeh bohot acha hai', 'Hum kal milenge', 'Prime Minister Narendra Modi ne aaj Delhi mein...').
 DO NOT output Arabic/Persian/Urdu script under any circumstance. Only Latin letters.`;
-    } else if (options.language === 'ur') {
-      languageInstruction = `
+  } else if (options.language === 'ur') {
+    languageInstruction = `
 CRITICAL LANGUAGE REQUIREMENT: Transcribe strictly into standard URDU SCRIPT (اردو رسم الخط).
 Do NOT use Latin letters. Use authentic Urdu characters, spelling, and grammar.`;
-    } else if (options.language === 'auto') {
-      languageInstruction = `
+  } else if (options.language === 'hi') {
+    languageInstruction = `
+Transcribe the speech in authentic Hindi (Devanagari script or standard Hindi). Ensure correct vocabulary and grammar.`;
+  } else if (options.language === 'auto') {
+    languageInstruction = `
 Automatically detect the primary spoken language of the audio and transcribe accurately with standard grammar, spelling, and punctuation.`;
-    } else {
-      languageInstruction = `
+  } else {
+    languageInstruction = `
 Transcribe the speech in target language: ${options.language}. Ensure precise spelling, capitalization, and punctuation in that language.`;
-    }
+  }
 
-    let groupingInstruction = '';
-    switch (options.wordGrouping) {
-      case '1-2':
-        groupingInstruction = 'Word grouping requirement: Strictly 1 to 2 words per caption line.';
-        break;
-      case '2-3':
-        groupingInstruction = 'Word grouping requirement: Strictly 2 to 3 words per caption line.';
-        break;
-      case '3-4':
-        groupingInstruction = 'Word grouping requirement: Strictly 3 to 4 words per caption line.';
-        break;
-      case '4-5':
-        groupingInstruction = 'Word grouping requirement: Strictly 4 to 5 words per caption line.';
-        break;
-      case '5-6':
-        groupingInstruction = 'Word grouping requirement: Strictly 5 to 6 words per caption line.';
-        break;
-      case 'auto':
-      default:
-        groupingInstruction = 'Word grouping requirement: Auto-chunk into clean, punchy spoken phrases (typically 2 to 5 words).';
-        break;
-    }
+  let groupingInstruction = '';
+  switch (options.wordGrouping) {
+    case '1-2':
+      groupingInstruction = 'Word grouping requirement: Strictly 1 to 2 words per caption line.';
+      break;
+    case '2-3':
+      groupingInstruction = 'Word grouping requirement: Strictly 2 to 3 words per caption line.';
+      break;
+    case '3-4':
+      groupingInstruction = 'Word grouping requirement: Strictly 3 to 4 words per caption line.';
+      break;
+    case '4-5':
+      groupingInstruction = 'Word grouping requirement: Strictly 4 to 5 words per caption line.';
+      break;
+    case '5-6':
+      groupingInstruction = 'Word grouping requirement: Strictly 5 to 6 words per caption line.';
+      break;
+    case 'auto':
+    default:
+      groupingInstruction = 'Word grouping requirement: Auto-chunk into clean, punchy spoken phrases (typically 2 to 5 words).';
+      break;
+  }
 
-    const promptText = `
+  const promptText = `
 You are Capora AI's speech-to-text caption engine.
 Your task is to transcribe this audio into highly accurate, timestamped captions for video subtitles.
 
@@ -111,79 +103,92 @@ Rules:
 Return the response in JSON matching the schema provided.
 `;
 
-    const audioPart = {
-      inlineData: {
-        mimeType: 'audio/mp3',
-        data: base64Audio,
-      },
-    };
+  const audioPart = {
+    inlineData: {
+      mimeType,
+      data: base64Audio,
+    },
+  };
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: {
-        parts: [audioPart, { text: promptText }],
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            detectedLanguage: {
-              type: Type.STRING,
-              description: 'The language detected or used for transcription',
-            },
-            captions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  start: {
-                    type: Type.NUMBER,
-                    description: 'Start time in seconds',
-                  },
-                  end: {
-                    type: Type.NUMBER,
-                    description: 'End time in seconds',
-                  },
-                  text: {
-                    type: Type.STRING,
-                    description: 'The single-line caption text',
-                  },
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.8-flash',
+    contents: {
+      parts: [audioPart, { text: promptText }],
+    },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          detectedLanguage: {
+            type: Type.STRING,
+            description: 'The language detected or used for transcription',
+          },
+          captions: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                start: {
+                  type: Type.NUMBER,
+                  description: 'Start time in seconds',
                 },
-                required: ['start', 'end', 'text'],
+                end: {
+                  type: Type.NUMBER,
+                  description: 'End time in seconds',
+                },
+                text: {
+                  type: Type.STRING,
+                  description: 'The single-line caption text',
+                },
               },
+              required: ['start', 'end', 'text'],
             },
           },
-          required: ['captions'],
         },
+        required: ['captions'],
       },
-    });
+    },
+  });
 
-    const rawJson = (response.text ?? '{}').trim();
-    const parsed = JSON.parse(rawJson);
+  const rawJson = (response.text ?? '{}').trim();
+  const parsed = JSON.parse(rawJson);
 
-    const captions: CaptionItem[] = (parsed.captions || []).map((c: any, index: number) => ({
-      id: `cap_${Date.now()}_${index}`,
-      start: Math.max(0, Number(c.start) || 0),
-      end: Math.max(Number(c.start) + 0.3, Number(c.end) || Number(c.start) + 1),
-      text: String(c.text || '').replace(/[\r\n]+/g, ' ').trim(),
-    }));
+  const captions: CaptionItem[] = (parsed.captions || []).map((c: any, index: number) => ({
+    id: `cap_${Date.now()}_${index}`,
+    start: Math.max(0, Number(c.start) || 0),
+    end: Math.max(Number(c.start) + 0.3, Number(c.end) || Number(c.start) + 1),
+    text: String(c.text || '').replace(/[\r\n]+/g, ' ').trim(),
+  }));
 
-    // If grouping was requested, apply server-side grouping to guarantee strict adherence
-    const finalCaptions = regroupCaptions(captions, options.wordGrouping);
+  const finalCaptions = regroupCaptions(captions, options.wordGrouping);
 
-    return {
-      captions: finalCaptions,
-      detectedLanguage: parsed.detectedLanguage || options.language,
-    };
+  return {
+    captions: finalCaptions,
+    detectedLanguage: parsed.detectedLanguage || options.language,
+  };
+}
+
+export async function transcribeMedia(
+  mediaFilePath: string,
+  options: TranscribeOptions
+): Promise<{ captions: CaptionItem[]; detectedLanguage: string }> {
+  const tempAudioDir = path.resolve(process.cwd(), 'data', 'temp');
+  if (!fs.existsSync(tempAudioDir)) {
+    fs.mkdirSync(tempAudioDir, { recursive: true });
+  }
+  const tempAudioPath = path.join(tempAudioDir, `transcribe_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp3`);
+
+  try {
+    await extractAudioTrack(mediaFilePath, tempAudioPath);
+    const audioBuffer = fs.readFileSync(tempAudioPath);
+    const base64Audio = audioBuffer.toString('base64');
+    return await transcribeAudioBase64(base64Audio, 'audio/mp3', options);
   } finally {
-    // Clean up temporary audio file
     if (fs.existsSync(tempAudioPath)) {
       try {
         fs.unlinkSync(tempAudioPath);
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     }
   }
 }

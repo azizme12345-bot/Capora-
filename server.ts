@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import { db, ProjectData } from './server/db.js';
 import { UPLOADS_DIR, EXPORTS_DIR, isR2Configured } from './server/storage.js';
 import { probeMedia, startRenderJob, getRenderJob, getAllRenderJobs } from './server/ffmpeg.js';
-import { transcribeMedia, regroupCaptions, getGeminiClient } from './server/gemini.js';
+import { transcribeMedia, transcribeAudioBase64, regroupCaptions, getGeminiClient } from './server/gemini.js';
 
 dotenv.config();
 
@@ -144,7 +144,19 @@ app.get('/api/media/:filename', (req, res) => {
 // AI Caption Generation
 app.post('/api/transcribe', async (req, res) => {
   try {
-    const { mediaFilename, audioFilename, language, wordGrouping, detectMode } = req.body;
+    const { mediaFilename, audioFilename, audioBase64, mimeType, language, wordGrouping, detectMode } = req.body;
+
+    const options = {
+      language: language || 'en',
+      wordGrouping: wordGrouping || 'auto',
+      detectMode: detectMode || 'auto',
+    };
+
+    // If client provided extracted audio directly (e.g. client extraction fallback)
+    if (audioBase64) {
+      const result = await transcribeAudioBase64(audioBase64, mimeType || 'audio/wav', options);
+      return res.json(result);
+    }
 
     const targetFile = audioFilename || mediaFilename;
     if (!targetFile) {
@@ -156,12 +168,7 @@ app.post('/api/transcribe', async (req, res) => {
       return res.status(404).json({ error: 'Target media file does not exist on server.' });
     }
 
-    const result = await transcribeMedia(filePath, {
-      language: language || 'en',
-      wordGrouping: wordGrouping || 'auto',
-      detectMode: detectMode || 'auto',
-    });
-
+    const result = await transcribeMedia(filePath, options);
     res.json(result);
   } catch (err: any) {
     console.error('Transcription error:', err);

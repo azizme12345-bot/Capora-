@@ -41,6 +41,8 @@ export interface UploadedMedia {
   hasVideo: boolean;
   hasAudio: boolean;
   url: string;
+  localFile?: File;
+  serverUploaded?: boolean;
 }
 
 export interface ProjectData {

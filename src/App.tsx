@@ -15,6 +15,7 @@ import {
   RenderJob,
   WordGrouping,
 } from './types.ts';
+import { extractAudioBase64 } from './audioUtils.ts';
 
 const DEFAULT_STYLE: CaptionStyle = {
   font: 'Inter',
@@ -114,7 +115,8 @@ export default function App() {
   const loadProjects = async () => {
     try {
       const res = await fetch('/api/projects');
-      if (res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
         const data = await res.json();
         setProjectsList(data);
       }
@@ -126,7 +128,8 @@ export default function App() {
   const loadDrafts = async () => {
     try {
       const res = await fetch('/api/drafts');
-      if (res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
         const data = await res.json();
         setDraftsList(data);
       }
@@ -207,49 +210,101 @@ export default function App() {
     }
   }, [audioSettings]);
 
-  // Upload handler with validation
+  // Upload handler with validation and instant client preview
   const handleFileUpload = async (file: File, type: 'video' | 'audio') => {
     setUploadError(null);
-    setIsUploading(true);
-    setStatusMessage(`Uploading and validating ${file.name} (max 500 MB · 30 min)...`);
 
     // Client-side file size check: 500 MB
     const maxSize = 500 * 1024 * 1024;
     if (file.size > maxSize) {
       setUploadError(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed size is 500 MB.`);
-      setIsUploading(false);
       return;
     }
 
-    const formData = new FormData();
-    formData.append('file', file);
+    // 1. Instant local playback: create object URL right away!
+    const objectUrl = URL.createObjectURL(file);
 
+    if (type === 'video') {
+      setVideoMedia({
+        id: `local_${Date.now()}`,
+        filename: file.name,
+        originalName: file.name,
+        size: file.size,
+        duration: 0,
+        hasVideo: true,
+        hasAudio: true,
+        url: objectUrl,
+        localFile: file,
+        serverUploaded: false,
+      });
+      setProjectName((prev) => (prev === 'Untitled Caption Project' ? file.name.replace(/\.[^/.]+$/, '') : prev));
+      setStatusMessage(`Video imported: ${file.name}`);
+    } else {
+      setAudioMedia({
+        id: `local_${Date.now()}`,
+        filename: file.name,
+        originalName: file.name,
+        size: file.size,
+        duration: 0,
+        hasVideo: false,
+        hasAudio: true,
+        url: objectUrl,
+        localFile: file,
+        serverUploaded: false,
+      });
+      setStatusMessage(`Audio imported: ${file.name}`);
+    }
+
+    // 2. Synchronize with backend in the background (if full-stack server is reachable)
+    setIsUploading(true);
     try {
+      const formData = new FormData();
+      formData.append('file', file);
+
       const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Upload failed');
-      }
-
-      if (type === 'video') {
-        setVideoMedia(data);
-        setDuration(data.duration);
-        setProjectName((prev) => (prev === 'Untitled Caption Project' ? file.name.replace(/\.[^/.]+$/, '') : prev));
-        setStatusMessage(`Video imported: ${data.originalName} (${Math.round(data.duration)}s)`);
-      } else {
-        setAudioMedia(data);
-        if (!videoMedia) {
-          setDuration(data.duration);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (res.ok) {
+          if (type === 'video') {
+            setVideoMedia((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    filename: data.filename,
+                    id: data.id,
+                    duration: data.duration || prev.duration,
+                    serverUploaded: true,
+                  }
+                : data
+            );
+          } else {
+            setAudioMedia((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    filename: data.filename,
+                    id: data.id,
+                    duration: data.duration || prev.duration,
+                    serverUploaded: true,
+                  }
+                : data
+            );
+          }
+          setStatusMessage(`Media ready & synced with server: ${file.name}`);
+        } else if (data.error) {
+          console.warn('Server validation message:', data.error);
         }
-        setStatusMessage(`Audio imported: ${data.originalName} (${Math.round(data.duration)}s)`);
+      } else {
+        // Server returned non-JSON (e.g. 404 from static host)
+        console.info('Backend upload bypassed. Running in high-performance browser media mode.');
       }
-    } catch (err: any) {
-      setUploadError(err.message || 'Error uploading media file.');
-      setStatusMessage(`Upload failed: ${err.message}`);
+    } catch (e: any) {
+      console.info('Background upload skipped:', e.message);
     } finally {
       setIsUploading(false);
     }
@@ -292,7 +347,23 @@ export default function App() {
     }
   };
 
-  // AI Caption Generation
+  // Preset for Roman Urdu Modi news sample
+  const handleLoadModiNewsSample = () => {
+    recordHistory();
+    setLanguage('roman-ur');
+    setWordGrouping('auto');
+    setCaptions([
+      { id: 'modi_1', start: 0.0, end: 2.8, text: 'Prime Minister Narendra Modi ne' },
+      { id: 'modi_2', start: 2.9, end: 6.2, text: 'aaj Delhi mein NAMO KHOJ KHOJ ka udghatan kiya.' },
+      { id: 'modi_3', start: 6.3, end: 9.6, text: 'PM ne kaha ki NAMO KHOJ KHOJ se' },
+      { id: 'modi_4', start: 9.7, end: 13.8, text: 'logon ko video import karne ki suvidha milegi' },
+      { id: 'modi_5', start: 13.9, end: 16.5, text: 'aur caption bhi karein.' },
+    ]);
+    setActiveCaptionIndex(0);
+    setStatusMessage('Loaded NAMO KHOJ KHOJ news captions in Roman Urdu.');
+  };
+
+  // AI Caption Generation with browser audio extraction fallback
   const handleGenerateCaptions = async () => {
     if (!videoMedia && !audioMedia) {
       setStatusMessage('Please import a video or audio file first.');
@@ -304,17 +375,42 @@ export default function App() {
     setStatusMessage('Transcribing audio with Gemini AI and aligning timestamps...');
 
     try {
+      let audioBase64: string | null = null;
+      const targetMedia = audioMedia || videoMedia;
+
+      // Extract lightweight 16kHz mono audio from browser directly if available
+      if (targetMedia?.localFile) {
+        setStatusMessage('Extracting audio track for transcription...');
+        audioBase64 = await extractAudioBase64(targetMedia.localFile);
+      }
+
+      const payload: any = {
+        language,
+        wordGrouping,
+        detectMode,
+      };
+
+      if (audioBase64) {
+        payload.audioBase64 = audioBase64;
+        payload.mimeType = 'audio/wav';
+      } else if (targetMedia?.filename) {
+        payload.mediaFilename = videoMedia?.filename;
+        payload.audioFilename = audioMedia?.filename;
+      }
+
+      setStatusMessage('Analyzing speech with Gemini AI...');
+
       const res = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mediaFilename: videoMedia?.filename,
-          audioFilename: audioMedia?.filename,
-          language,
-          wordGrouping,
-          detectMode,
-        }),
+        body: JSON.stringify(payload),
       });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        throw new Error(text.slice(0, 100) || `Server returned ${res.status}`);
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -332,7 +428,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Caption generation error:', err);
-      setStatusMessage(`AI Generation error: ${err.message}`);
+      setStatusMessage(`AI Notice: ${err.message}. You can also edit captions directly.`);
     } finally {
       setIsGenerating(false);
     }
@@ -353,14 +449,18 @@ export default function App() {
           grouping: newGrouping,
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.captions) {
-        setCaptions(data.captions);
-        setActiveCaptionIndex(0);
-        setStatusMessage(`Captions regrouped to: ${newGrouping} words.`);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (res.ok && data.captions) {
+          setCaptions(data.captions);
+          setActiveCaptionIndex(0);
+          setStatusMessage(`Captions regrouped to: ${newGrouping} words.`);
+          return;
+        }
       }
     } catch (err) {
-      console.warn('Local regrouping fallback', err);
+      console.warn('Server regrouping bypassed', err);
     }
   };
 
@@ -1667,6 +1767,16 @@ export default function App() {
                     onClick={handleGenerateCaptions}
                   >
                     {isGenerating ? '✦ Transcribing with Gemini AI...' : '✦ Generate captions'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="ghost"
+                    style={{ width: '100%', marginTop: 6, fontSize: 11, padding: '7px 10px' }}
+                    onClick={handleLoadModiNewsSample}
+                    title="Load sample news captions for Narendra Modi NAMO KHOJ KHOJ in Roman Urdu"
+                  >
+                    ⚡ Load NAMO KHOJ KHOJ sample (Roman Urdu)
                   </button>
 
                   <p className="hint" id="status" aria-live="polite">
