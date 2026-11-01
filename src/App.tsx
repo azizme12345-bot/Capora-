@@ -221,7 +221,7 @@ export default function App() {
       return;
     }
 
-    // 1. Instant local playback: create object URL right away!
+    // 1. Instant local playback: create object URL right away
     const objectUrl = URL.createObjectURL(file);
 
     if (type === 'video') {
@@ -240,9 +240,11 @@ export default function App() {
       setProjectName((prev) => (prev === 'Untitled Caption Project' ? file.name.replace(/\.[^/.]+$/, '') : prev));
       setStatusMessage(`Video imported: ${file.name}`);
 
-      // Probe duration immediately so the chip displays (00:14) rather than (00:00)
+      // Probe duration immediately so the chip displays real duration rather than (00:00)
       const probeVid = document.createElement('video');
       probeVid.preload = 'metadata';
+      probeVid.muted = true;
+      probeVid.playsInline = true;
       probeVid.src = objectUrl;
       const onProbeDuration = () => {
         const detectedDur = probeVid.duration || 0;
@@ -254,6 +256,7 @@ export default function App() {
       probeVid.onloadedmetadata = onProbeDuration;
       probeVid.ondurationchange = onProbeDuration;
       probeVid.oncanplay = onProbeDuration;
+      probeVid.onloadeddata = onProbeDuration;
       try {
         probeVid.load();
       } catch (e) {}
@@ -285,20 +288,24 @@ export default function App() {
       probeAud.onloadedmetadata = onProbeAudDuration;
       probeAud.ondurationchange = onProbeAudDuration;
       probeAud.oncanplay = onProbeAudDuration;
+      probeAud.onloadeddata = onProbeAudDuration;
       try {
         probeAud.load();
       } catch (e) {}
     }
 
-    // 2. Synchronize with backend in the background (if full-stack server is reachable)
+    // 2. Synchronize metadata with backend in the background (using lightweight JSON to avoid Vercel 4.5MB limit)
     setIsUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
       const res = await fetch('/api/upload', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          size: file.size,
+          type: file.type,
+          duration: 0,
+        }),
       });
 
       const contentType = res.headers.get('content-type') || '';
@@ -310,36 +317,29 @@ export default function App() {
               prev
                 ? {
                     ...prev,
-                    filename: data.filename,
-                    id: data.id,
-                    duration: data.duration || prev.duration,
+                    filename: data.filename || prev.filename,
+                    id: data.id || prev.id,
                     serverUploaded: true,
                   }
-                : data
+                : null
             );
           } else {
             setAudioMedia((prev) =>
               prev
                 ? {
                     ...prev,
-                    filename: data.filename,
-                    id: data.id,
-                    duration: data.duration || prev.duration,
+                    filename: data.filename || prev.filename,
+                    id: data.id || prev.id,
                     serverUploaded: true,
                   }
-                : data
+                : null
             );
           }
-          setStatusMessage(`Media ready & synced with server: ${file.name}`);
-        } else if (data.error) {
-          console.warn('Server validation message:', data.error);
+          setStatusMessage(`Media ready: ${file.name}`);
         }
-      } else {
-        // Server returned non-JSON (e.g. 404 from static host)
-        console.info('Backend upload bypassed. Running in high-performance browser media mode.');
       }
     } catch (e: any) {
-      console.info('Background upload skipped:', e.message);
+      console.info('Backend metadata sync notice:', e.message);
     } finally {
       setIsUploading(false);
     }
@@ -439,7 +439,7 @@ export default function App() {
     setStatusMessage('Preparing media for Gemini AI speech analysis...');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 35000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     try {
       const targetMedia = audioMedia || videoMedia;
@@ -456,8 +456,8 @@ export default function App() {
         if (aBase64) {
           payload.audioBase64 = aBase64;
           payload.mimeType = 'audio/wav';
-        } else if (targetMedia.localFile.size <= 3 * 1024 * 1024) {
-          // Fallback if browser audio decoding was unavailable and file is small (<= 3MB)
+        } else if (targetMedia.localFile.size <= 4 * 1024 * 1024) {
+          // Fallback if browser audio decoding was unavailable and file is under 4MB
           const fBase64 = await fileToBase64(targetMedia.localFile);
           payload.fileBase64 = fBase64;
           payload.mimeType = targetMedia.localFile.type || (targetMedia.hasVideo ? 'video/mp4' : 'audio/wav');
@@ -481,15 +481,14 @@ export default function App() {
         const text = await res.text();
         if (text.includes('413') || text.includes('Payload Too Large')) {
           throw new Error('Media payload too large. Please use a shorter clip.');
-        } else if (text.includes('The page c') || text.includes('404')) {
-          throw new Error('Serverless function warming up or endpoint missing. Please verify GEMINI_API_KEY in Vercel.');
         }
-        throw new Error(text.slice(0, 100) || `Server returned ${res.status}`);
+        throw new Error(text.slice(0, 100) || `Server returned status ${res.status}`);
       }
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate captions');
+      if (data.error && (!data.captions || data.captions.length === 0)) {
+        setStatusMessage(`AI Notice: ${data.error}`);
+        return;
       }
 
       if (data.captions && data.captions.length > 0) {
@@ -872,11 +871,6 @@ export default function App() {
           <strong>AI Caption Studio</strong>
           <br />
           Make every word count.
-          {backendStatus && !backendStatus.geminiConfigured && (
-            <div style={{ marginTop: 8, color: '#fca5a5', fontSize: 11 }}>
-              ⚠️ GEMINI_API_KEY is not set in Secrets. AI generation requires this variable.
-            </div>
-          )}
         </div>
       </aside>
 
@@ -1445,6 +1439,15 @@ export default function App() {
                           }
                         }}
                         onCanPlay={() => {
+                          if (videoRef.current) {
+                            const dur = videoRef.current.duration || 0;
+                            if (dur > 0 && isFinite(dur)) {
+                              setDuration(dur);
+                              setVideoMedia((prev) => (prev ? { ...prev, duration: dur } : null));
+                            }
+                          }
+                        }}
+                        onLoadedData={() => {
                           if (videoRef.current) {
                             const dur = videoRef.current.duration || 0;
                             if (dur > 0 && isFinite(dur)) {

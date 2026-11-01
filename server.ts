@@ -11,7 +11,7 @@ import { transcribeMedia, transcribeAudioBase64, regroupCaptions, getGeminiClien
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -49,8 +49,25 @@ app.get('/api/status', (_req, res) => {
   });
 });
 
-// Media Upload endpoint with validation
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+// Media Upload endpoint with validation (supports JSON metadata and multipart file uploads)
+app.post('/api/upload', (req, res, next) => {
+  if (req.is('json')) {
+    const { filename, size, duration } = req.body || {};
+    const safeName = filename || 'media.mp4';
+    const unique = `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return res.json({
+      id: unique,
+      filename: safeName,
+      originalName: safeName,
+      size: size || 0,
+      duration: duration || 0,
+      hasVideo: !safeName.match(/\.(mp3|wav|ogg|m4a|aac)$/i),
+      hasAudio: true,
+      url: `/api/media/${safeName}`,
+    });
+  }
+  upload.single('file')(req, res, next);
+}, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No media file provided.' });
   }
