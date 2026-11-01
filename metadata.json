@@ -1,0 +1,6 @@
+{
+  "name": "Capora — AI Caption Studio",
+  "description": "Generate, edit, style and export high-impact captions for videos with Gemini AI and server-side FFmpeg rendering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#08090d">
+<meta name="description" content="Capora — AI caption studio. Generate, edit and style captions for your videos.">
+<title>Capora — AI Caption Studio</title>
+<style>
+:root{--bg:#08090d;--panel:#11131a;--panel2:#171a23;--line:#282c38;--text:#f5f6fa;--muted:#9298a8;--accent:#9b7cff;--accent2:#6c5ce7;--green:#50d6a2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+button,input,select{font:inherit}button{cursor:pointer}
+.app{min-height:100vh;display:grid;grid-template-columns:230px 1fr}
+.sidebar{border-right:1px solid var(--line);padding:24px 16px;background:#0b0c11;display:flex;flex-direction:column;gap:28px}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px;font-size:21px;font-weight:800;letter-spacing:-.7px}.logo{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#a78bfa,#6253db);display:grid;place-items:center;font-weight:900;color:white}
+.nav{display:grid;gap:7px}.nav button{border:0;background:transparent;color:var(--muted);padding:12px 13px;border-radius:11px;text-align:left;display:flex;gap:12px;align-items:center}.nav button.active,.nav button:hover{background:#1b1b2a;color:#fff}.nav .ico{width:19px;text-align:center}.side-note{margin-top:auto;border:1px solid var(--line);border-radius:14px;padding:14px;color:var(--muted);font-size:12px;line-height:1.6}
+main{min-width:0;padding:26px clamp(16px,3vw,42px) 48px}.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:28px}.eyebrow{font-size:12px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}.topbar h1{font-size:25px;margin:5px 0 0;letter-spacing:-.7px}.top-actions{display:flex;gap:9px;align-items:center}.ghost,.primary,.soft{border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--panel);color:var(--text)}.primary{border:0;background:linear-gradient(135deg,#9b7cff,#6c5ce7);font-weight:700}.soft{background:#171522;border-color:#39304f}.workspace{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:18px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:18px;min-width:0}.card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px}.card-head h2{font-size:15px;margin:0}.sub{font-size:12px;color:var(--muted)}
+.upload{border:1px dashed #45445a;background:#0d0f15;border-radius:14px;padding:25px 16px;text-align:center}.upload-icon{font-size:28px;margin-bottom:8px}.upload h3{font-size:15px;margin:4px 0}.upload p{font-size:12px;color:var(--muted);margin:7px 0 15px}.upload-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.file-label{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border-radius:9px;background:#1b1d28;border:1px solid var(--line);font-size:12px;cursor:pointer}.file-label input{display:none}
+.preview{margin-top:15px;aspect-ratio:16/9;background:#050609;border:1px solid var(--line);border-radius:13px;display:grid;place-items:center;overflow:hidden;position:relative}.preview video{width:100%;height:100%;object-fit:contain;background:#000}.preview-placeholder{text-align:center;color:var(--muted);font-size:12px}.preview-placeholder strong{display:block;color:#dfe1e9;font-size:14px;margin-bottom:5px}.preview-caption{position:absolute;bottom:12%;left:50%;transform:translateX(-50%);max-width:90%;padding:5px 10px;border-radius:5px;background:#0009;color:white;font-weight:700;text-align:center;text-shadow:0 1px 3px #000;pointer-events:none}
+.import-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.mode{padding:11px 8px;border:1px solid var(--line);background:#151720;color:var(--muted);border-radius:10px;font-size:12px}.mode.active{border-color:#8c75ef;background:#211c35;color:#fff}.mode b{display:block;font-size:17px;margin-bottom:4px}
+.controls{display:grid;gap:14px}.field{display:grid;gap:7px}.field label,.field-title{font-size:12px;color:#c9cbd5}.field select,.field input[type=text],.field input[type=number]{width:100%;padding:11px 12px;background:#0c0e14;color:var(--text);border:1px solid var(--line);border-radius:9px;outline:none}.field select:focus,.field input:focus{border-color:#8d77ed}.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{font-size:11px;color:var(--muted);line-height:1.5}.generate{width:100%;padding:13px;margin-top:3px}
+.section-gap{margin-top:17px}.toggle-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #252833;font-size:12px}.toggle-row:last-child{border:0}.switch{width:36px;height:20px;border-radius:99px;background:#383b48;position:relative;flex:none}.switch:after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;background:#fff;border-radius:50%;transition:.2s}.switch.on{background:#7864dd}.switch.on:after{left:19px}
+.range-row{display:grid;grid-template-columns:1fr 42px;gap:10px;align-items:center}.range-row input{width:100%;accent-color:#9b7cff}.range-row output{font-size:11px;color:var(--muted);text-align:right}
+.timeline{margin-top:16px}.track{height:42px;background:#0b0d13;border:1px solid var(--line);border-radius:9px;display:flex;align-items:center;padding:5px;gap:5px;overflow:hidden}.clip{height:28px;min-width:70px;border-radius:6px;background:#342b55;border:1px solid #6653a5;display:grid;place-items:center;font-size:10px;color:#e5ddff;padding:0 8px}.clip:nth-child(2){background:#263d43;border-color:#376a70}.timeline-tools{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--muted)}
+.language-note{padding:10px 12px;border:1px solid #37314c;background:#171522;border-radius:10px;font-size:11px;color:#c9c1e8;line-height:1.5}
+@media(max-width:900px){.app{grid-template-columns:1fr}.sidebar{padding:12px 14px;border-right:0;border-bottom:1px solid var(--line);flex-direction:row;align-items:center;justify-content:space-between;gap:10px}.nav{display:flex;gap:4px}.nav button{padding:9px}.nav button span:last-child{display:none}.side-note{display:none}.workspace{grid-template-columns:1fr}.sidebar .brand{font-size:18px}}
+@media(max-width:520px){main{padding:19px 12px 35px}.topbar{align-items:flex-start}.topbar h1{font-size:21px}.top-actions .ghost{display:none}.sidebar{overflow:auto}.nav button{padding:9px 10px}.brand{padding:0}.import-modes{gap:5px}.mode{font-size:10px;padding:9px 4px}.field-row{grid-template-columns:1fr}.card{padding:14px}.upload{padding:20px 10px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="logo">C</div>Capora</div>
+  <nav class="nav">
+    <button class="active" data-page="studio"><span class="ico">✦</span><span>Caption Studio</span></button>
+    <button data-page="projects"><span class="ico">▣</span><span>My Projects</span></button>
+    <button data-page="drafts"><span class="ico">▤</span><span>Draft Gallery</span></button>
+  </nav>
+  <div class="side-note">AI Caption Studio<br>Make every word count.</div>
+</aside>
+<main>
+  <div class="topbar">
+    <div><div class="eyebrow">Create · Edit · Export</div><h1>Caption Studio</h1></div>
+    <div class="top-actions"><button class="ghost" id="newProject">＋ New project</button><button class="primary" id="saveProject">Save project</button></div>
+  </div>
+  <div class="workspace">
+    <section>
+      <div class="card">
+        <div class="card-head"><h2>Import your media</h2><span class="sub">Up to 30 min · 500 MB</span></div>
+        <div class="import-modes">
+          <button class="mode active" data-mode="video"><b>▣</b>Video to captions</button>
+          <button class="mode" data-mode="audio"><b>♫</b>Audio to captions</button>
+          <button class="mode" data-mode="both"><b>◈</b>Video + audio</button>
+        </div>
+        <div class="upload" id="uploadBox">
+          <div class="upload-icon">⇧</div><h3>Choose a video to get started</h3><p>MP4, MOV, WEBM and common audio formats</p>
+          <div class="upload-actions">
+            <label class="file-label">＋ Choose video<input id="videoFile" type="file" accept="video/*"></label>
+            <label class="file-label" id="audioLabel">♫ Choose audio<input id="audioFile" type="file" accept="audio/*"></label>
+          </div>
+        </div>
+        <div class="preview" id="preview">
+          <div class="preview-placeholder"><strong>Your video preview</strong>Import media to see it here</div>
+        </div>
+        <div class="timeline">
+          <div class="card-head"><h2>Caption timeline</h2><span class="sub">Preview layout</span></div>
+          <div class="track"><div class="clip">Caption 01</div><div class="clip">Caption 02</div><div class="clip">Caption 03</div><div class="clip">Caption 04</div></div>
+          <div class="timeline-tools"><span>00:00</span><span>00:30</span></div>
+        </div>
+      </div>
+      <div class="card section-gap">
+        <div class="card-head"><h2>Audio settings</h2><span class="sub">Control each track</span></div>
+        <div class="toggle-row"><span>Original video audio</span><button class="switch on" aria-label="Toggle original video audio"></button></div>
+        <div class="range-row"><input type="range" min="0" max="100" value="100"><output>100%</output></div>
+        <div class="toggle-row"><span>Uploaded audio track</span><button class="switch on" aria-label="Toggle uploaded audio"></button></div>
+        <div class="range-row"><input type="range" min="0" max="100" value="80"><output>80%</output></div>
+        <div class="field section-gap"><label for="sync">Audio sync offset (seconds)</label><input id="sync" type="number" step="0.1" value="0"><span class="hint">Use a positive or negative value to align the uploaded audio with the video.</span></div>
+      </div>
+    </section>
+    <section>
+      <div class="card">
+        <div class="card-head"><h2>AI caption settings</h2><span class="sub">Set your language</span></div>
+        <div class="controls">
+          <div class="field"><label for="language">Caption language</label>
+            <select id="language">
+              <option value="auto">Auto detect language</option>
+              <option selected value="en">English</option>
+              <option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option>
+              <option value="pt">Portuguese</option><option value="ar">Arabic</option><option value="hi">Hindi</option>
+              <option value="ur">Urdu — اردو</option><option value="roman-ur">Roman Urdu — Aap kaise hain?</option>
+              <option value="zh">Chinese</option><option value="ja">Japanese</option><option value="ko">Korean</option>
+              <option value="tr">Turkish</option><option value="it">Italian</option><option value="ru">Russian</option><option value="bn">Bengali</option>
+            </select>
+            <span class="hint">Urdu and Roman Urdu are separate output choices. Roman Urdu uses Urdu words written in Latin letters.</span>
+          </div>
+          <div class="field"><label for="mode">Caption format</label><select id="mode"><option>Full sentences</option><option>Short phrases</option><option>Word by word</option></select></div>
+          <div class="field"><label for="detect">Language detection</label><select id="detect"><option>Auto detect spoken language</option><option>Use selected language only</option></select></div>
+          <div class="field-row">
+            <div class="field"><label for="font">Caption font</label><select id="font"><option>Inter</option><option>Arial</option><option>Georgia</option><option>System default</option></select></div>
+            <div class="field"><label for="size">Text size</label><select id="size"><option>Medium</option><option>Small</option><option>Large</option><option>Extra large</option></select></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="color">Text color</label><input id="color" type="color" value="#ffffff" style="width:100%;height:42px;background:#0c0e14;border:1px solid var(--line);border-radius:9px;padding:4px"></div>
+            <div class="field"><label for="animation">Caption animation</label><select id="animation"><option>None</option><option>Fade</option><option>Pop</option><option>Bounce</option><option>Slide up</option><option>Typewriter</option><option>Word highlight</option></select></div>
+          </div>
+          <div class="field"><label for="captionText">Edit sample caption</label><input id="captionText" type="text" value="Your captions will appear here"></div>
+          <div class="field"><label for="position">Caption position</label><select id="position"><option>Bottom center</option><option>Top center</option><option>Middle center</option></select></div>
+          <div class="language-note">Designed with English-speaking audiences in mind, while supporting multiple caption languages and separate Urdu / Roman Urdu output.</div>
+          <button class="primary generate" id="generate">✦ Generate captions</button>
+          <p class="hint" id="status" aria-live="polite">Prototype preview: AI generation will work after connecting the transcription service and backend.</p>
+        </div>
+      </div>
+      <div class="card section-gap">
+        <div class="card-head"><h2>Export video</h2><span class="sub">Full video render</span></div>
+        <div class="field"><label for="resolution">Export resolution</label><select id="resolution"><option>Original resolution</option><option>1080p</option><option>720p</option></select></div>
+        <div class="field section-gap"><label for="ratio">Aspect ratio</label><select id="ratio"><option>Original</option><option>9:16 — Shorts / Reels</option><option>16:9 — YouTube</option><option>1:1 — Square</option></select></div>
+        <button class="primary generate" id="export">Export video</button>
+        <p class="hint">Export is a design placeholder in this HTML prototype. Real full-length MP4 rendering requires a connected server-side FFmpeg export service.</p>
+      </div>
+    </section>
+  </div>
+</main>
+</div>
+<script>
+const videoInput=document.getElementById('videoFile'), audioInput=document.getElementById('audioFile'), preview=document.getElementById('preview');
+let videoUrl=null, selectedMode='video';
+document.querySelectorAll('.mode').forEach(btn=>btn.addEventListener('click',()=>{
+ document.querySelectorAll('.mode').forEach(b=>b.classList.remove('active'));btn.classList.add('active');selectedMode=btn.dataset.mode;
+ document.querySelector('#uploadBox h3').textContent=selectedMode==='audio'?'Choose an audio file to get started':selectedMode==='both'?'Choose a video and a separate audio file':'Choose a video to get started';
+}));
+videoInput.addEventListener('change',()=>{
+ const file=videoInput.files[0];if(!file)return;
+ if(videoUrl)URL.revokeObjectURL(videoUrl);videoUrl=URL.createObjectURL(file);
+ preview.innerHTML='';const v=document.createElement('video');v.src=videoUrl;v.controls=true;v.playsInline=true;preview.appendChild(v);
+ document.getElementById('status').textContent='Video selected: '+file.name+' — AI generation is not connected in this prototype.';
+});
+audioInput.addEventListener('change',()=>{const f=audioInput.files[0];if(f)document.getElementById('status').textContent='Audio selected: '+f.name+' — audio processing is not connected in this prototype.'});
+document.querySelectorAll('.switch').forEach(s=>s.addEventListener('click',()=>s.classList.toggle('on')));
+document.querySelectorAll('.range-row input').forEach(r=>r.addEventListener('input',()=>r.nextElementSibling.value=r.value+'%'));
+document.getElementById('generate').addEventListener('click',()=>document.getElementById('status').textContent='Prototype only: connect speech recognition / AI transcription to generate real captions.');
+document.getElementById('export').addEventListener('click',()=>alert('Export is not connected yet. A server-side FFmpeg render service is required for complete videos and audio.'));
+document.getElementById('saveProject').addEventListener('click',()=>{try{localStorage.setItem('capora-caption-settings',JSON.stringify({language:document.getElementById('language').value,format:document.getElementById('mode').value,text:document.getElementById('captionText').value}));document.getElementById('status').textContent='Basic settings saved in this browser. Media files are not uploaded or cloud-saved.'}catch(e){document.getElementById('status').textContent='Could not save settings in this browser.'}});
+document.getElementById('newProject').addEventListener('click',()=>{videoInput.value='';audioInput.value='';preview.innerHTML='<div class="preview-placeholder"><strong>Your video preview</strong>Import media to see it here</div>';document.getElementById('status').textContent='New local project started.'});
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');if(b.dataset.page!=='studio')document.getElementById('status').textContent=b.dataset.page==='projects'?'My Projects screen is planned; this prototype currently shows the Caption Studio.':'Draft Gallery screen is planned; exported videos are not stored yet.'}));
+</script>
+</body>
+</html>
