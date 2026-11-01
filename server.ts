@@ -144,7 +144,7 @@ app.get('/api/media/:filename', (req, res) => {
 // AI Caption Generation
 app.post('/api/transcribe', async (req, res) => {
   try {
-    const { mediaFilename, audioFilename, audioBase64, mimeType, language, wordGrouping, detectMode } = req.body;
+    const { mediaFilename, audioFilename, audioBase64, fileBase64, mimeType, language, wordGrouping, detectMode } = req.body;
 
     const options = {
       language: language || 'en',
@@ -152,9 +152,11 @@ app.post('/api/transcribe', async (req, res) => {
       detectMode: detectMode || 'auto',
     };
 
-    // If client provided extracted audio directly (e.g. client extraction fallback)
-    if (audioBase64) {
-      const result = await transcribeAudioBase64(audioBase64, mimeType || 'audio/wav', options);
+    const directMedia = fileBase64 || audioBase64;
+    // If client provided media/audio base64 directly
+    if (directMedia) {
+      const targetMime = mimeType || (fileBase64 ? 'video/mp4' : 'audio/wav');
+      const result = await transcribeAudioBase64(directMedia, targetMime, options);
       return res.json(result);
     }
 

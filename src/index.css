@@ -811,3 +811,48 @@ main {
     padding: 20px 10px;
   }
 }
+
+.preview-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(108, 92, 231, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  color: #fff;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  z-index: 15;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preview-play-btn:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  background: #7864dd;
+}
+
+.preview-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #0d0f17;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  margin-top: 10px;
+}
+
+.preview-scrubber {
+  flex: 1;
+  accent-color: #9b7cff;
+  cursor: pointer;
+}
+

@@ -79,7 +79,10 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.API_KEY ||
+    process.env.GEMINI_KEY;
   if (!apiKey) {
     return res.status(400).json({
       error: 'GEMINI_API_KEY is not set in Vercel environment variables. Please add GEMINI_API_KEY in Vercel Settings > Environment Variables and redeploy.',
@@ -87,11 +90,12 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { audioBase64, mimeType, language = 'en', wordGrouping = 'auto' } = req.body || {};
+    const { audioBase64, fileBase64, mimeType, language = 'en', wordGrouping = 'auto' } = req.body || {};
+    const mediaData = fileBase64 || audioBase64;
 
-    if (!audioBase64) {
+    if (!mediaData) {
       return res.status(400).json({
-        error: 'No audio data received. Please select an audio or video file in Capora.',
+        error: 'No media data received. Please select an audio or video file in Capora.',
       });
     }
 
@@ -149,30 +153,32 @@ Transcribe the speech in target language: ${language}. Ensure precise spelling, 
 
     const promptText = `
 You are Capora AI's speech-to-text caption engine.
-Your task is to transcribe this audio into highly accurate, timestamped captions for video subtitles.
+Your task is to transcribe any spoken speech in this media file into accurate, timestamped captions for video subtitles.
 
 Rules:
 1. Every caption must be on a SINGLE LINE (no newlines '\\n' within any caption text).
 2. Start and end timestamps must be in seconds as floating point numbers (e.g., 0.5, 1.45, 3.2).
-3. Timestamps must accurately reflect when the words are spoken in the audio without large gaps or overlaps.
-4. ${languageInstruction}
-5. ${groupingInstruction}
-6. Correct all spelling, vocal stutters, and punctuation appropriately for clean video captions.
+3. Timestamps must accurately reflect when words are spoken without large gaps or overlaps.
+4. If there is NO speech or dialogue in the media (e.g. silent video, background music only, nature timelapse), return an EMPTY captions list: []. Do NOT invent dialogue.
+5. ${languageInstruction}
+6. ${groupingInstruction}
+7. Correct all spelling, vocal stutters, and punctuation appropriately for clean video captions.
 
 Return the response in JSON matching the schema provided.
 `;
 
-    const audioPart = {
+    const targetMime = mimeType || (fileBase64 ? 'video/mp4' : 'audio/wav');
+    const mediaPart = {
       inlineData: {
-        mimeType: mimeType || 'audio/wav',
-        data: audioBase64,
+        mimeType: targetMime,
+        data: mediaData,
       },
     };
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: {
-        parts: [audioPart, { text: promptText }],
+        parts: [mediaPart, { text: promptText }],
       },
       config: {
         responseMimeType: 'application/json',

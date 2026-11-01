@@ -15,7 +15,7 @@ import {
   RenderJob,
   WordGrouping,
 } from './types.ts';
-import { extractAudioBase64 } from './audioUtils.ts';
+import { extractAudioBase64, fileToBase64 } from './audioUtils.ts';
 
 const DEFAULT_STYLE: CaptionStyle = {
   font: 'Inter',
@@ -239,6 +239,24 @@ export default function App() {
       });
       setProjectName((prev) => (prev === 'Untitled Caption Project' ? file.name.replace(/\.[^/.]+$/, '') : prev));
       setStatusMessage(`Video imported: ${file.name}`);
+
+      // Probe duration immediately so the chip displays (00:14) rather than (00:00)
+      const probeVid = document.createElement('video');
+      probeVid.preload = 'metadata';
+      probeVid.src = objectUrl;
+      const onProbeDuration = () => {
+        const detectedDur = probeVid.duration || 0;
+        if (detectedDur > 0 && isFinite(detectedDur)) {
+          setDuration(detectedDur);
+          setVideoMedia((prev) => (prev ? { ...prev, duration: detectedDur } : null));
+        }
+      };
+      probeVid.onloadedmetadata = onProbeDuration;
+      probeVid.ondurationchange = onProbeDuration;
+      probeVid.oncanplay = onProbeDuration;
+      try {
+        probeVid.load();
+      } catch (e) {}
     } else {
       setAudioMedia({
         id: `local_${Date.now()}`,
@@ -253,6 +271,23 @@ export default function App() {
         serverUploaded: false,
       });
       setStatusMessage(`Audio imported: ${file.name}`);
+
+      const probeAud = document.createElement('audio');
+      probeAud.preload = 'metadata';
+      probeAud.src = objectUrl;
+      const onProbeAudDuration = () => {
+        const detectedDur = probeAud.duration || 0;
+        if (detectedDur > 0 && isFinite(detectedDur)) {
+          setDuration(detectedDur);
+          setAudioMedia((prev) => (prev ? { ...prev, duration: detectedDur } : null));
+        }
+      };
+      probeAud.onloadedmetadata = onProbeAudDuration;
+      probeAud.ondurationchange = onProbeAudDuration;
+      probeAud.oncanplay = onProbeAudDuration;
+      try {
+        probeAud.load();
+      } catch (e) {}
     }
 
     // 2. Synchronize with backend in the background (if full-stack server is reachable)
@@ -392,7 +427,7 @@ export default function App() {
     }
   };
 
-  // AI Caption Generation with browser audio extraction fallback
+  // AI Caption Generation with direct video/audio base64 and timeout protection
   const handleGenerateCaptions = async () => {
     if (!videoMedia && !audioMedia) {
       setStatusMessage('Please import a video or audio file first.');
@@ -401,38 +436,43 @@ export default function App() {
 
     recordHistory();
     setIsGenerating(true);
-    setStatusMessage('Transcribing audio with Gemini AI and aligning timestamps...');
+    setStatusMessage('Preparing media for Gemini AI speech analysis...');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
     try {
-      let audioBase64: string | null = null;
       const targetMedia = audioMedia || videoMedia;
-
-      // Extract lightweight 16kHz mono audio from browser directly if available
-      if (targetMedia?.localFile) {
-        setStatusMessage('Extracting audio track for transcription...');
-        audioBase64 = await extractAudioBase64(targetMedia.localFile);
-      }
-
       const payload: any = {
         language,
         wordGrouping,
         detectMode,
       };
 
-      if (audioBase64) {
-        payload.audioBase64 = audioBase64;
-        payload.mimeType = 'audio/wav';
+      // If file is <= 25MB (like 14-second or short video/audio clips), convert directly to base64
+      if (targetMedia?.localFile && targetMedia.localFile.size <= 25 * 1024 * 1024) {
+        const fBase64 = await fileToBase64(targetMedia.localFile);
+        payload.fileBase64 = fBase64;
+        payload.mimeType = targetMedia.localFile.type || (targetMedia.hasVideo ? 'video/mp4' : 'audio/wav');
+      } else if (targetMedia?.localFile) {
+        setStatusMessage('Extracting audio track for transcription...');
+        const aBase64 = await extractAudioBase64(targetMedia.localFile);
+        if (aBase64) {
+          payload.audioBase64 = aBase64;
+          payload.mimeType = 'audio/wav';
+        }
       } else if (targetMedia?.filename) {
         payload.mediaFilename = videoMedia?.filename;
         payload.audioFilename = audioMedia?.filename;
       }
 
-      setStatusMessage('Analyzing speech with Gemini AI...');
+      setStatusMessage('Transcribing speech with Gemini AI...');
 
       const res = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
       const contentType = res.headers.get('content-type') || '';
@@ -453,12 +493,17 @@ export default function App() {
           `Generated ${data.captions.length} captions in ${data.detectedLanguage || language} with ${wordGrouping} grouping.`
         );
       } else {
-        setStatusMessage('No spoken words were detected in the audio.');
+        setStatusMessage('No spoken words were detected in this video. You can type captions or load the NAMO KHOJ KHOJ sample.');
       }
     } catch (err: any) {
       console.error('Caption generation error:', err);
-      setStatusMessage(`AI Notice: ${err.message}. You can also edit captions directly.`);
+      if (err.name === 'AbortError') {
+        setStatusMessage('Transcription request timed out. Please verify your GEMINI_API_KEY in Vercel settings.');
+      } else {
+        setStatusMessage(`AI Notice: ${err.message}. You can edit captions directly.`);
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsGenerating(false);
     }
   };
@@ -720,6 +765,43 @@ export default function App() {
     const m = Math.floor(s / 60);
     const rem = s % 60;
     return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+  };
+
+  // Real active duration computed across state, media object, and video element
+  const activeDuration =
+    duration > 0 && isFinite(duration)
+      ? duration
+      : videoMedia?.duration && isFinite(videoMedia.duration) && videoMedia.duration > 0
+      ? videoMedia.duration
+      : videoRef.current?.duration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0
+      ? videoRef.current.duration
+      : 0;
+
+  const activeAudioDuration =
+    audioMedia?.duration && isFinite(audioMedia.duration) && audioMedia.duration > 0
+      ? audioMedia.duration
+      : audioRef.current?.duration && isFinite(audioRef.current.duration) && audioRef.current.duration > 0
+      ? audioRef.current.duration
+      : 0;
+
+  const togglePlayVideo = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  };
+
+  const handleFullscreen = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!videoRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      videoRef.current.requestFullscreen().catch(() => {});
+    }
   };
 
   return (
@@ -1289,7 +1371,7 @@ export default function App() {
                           color: '#cdd3e6',
                         }}
                       >
-                        ✓ Video: {videoMedia.originalName} ({formatTimecode(videoMedia.duration)})
+                        ✓ Video: {videoMedia.originalName} ({formatTimecode(activeDuration)})
                       </span>
                     )}
                     {audioMedia && (
@@ -1303,28 +1385,71 @@ export default function App() {
                           color: '#9fe5ce',
                         }}
                       >
-                        ✓ Audio: {audioMedia.originalName} ({formatTimecode(audioMedia.duration)})
+                        ✓ Audio: {audioMedia.originalName} ({formatTimecode(activeAudioDuration || activeDuration)})
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Video Preview with Real-Time Subtitle Overlay */}
-                <div className="preview" id="preview">
+                {/* Video Preview with Real-Time Subtitle Overlay and Click-to-Play/Pause */}
+                <div
+                  className="preview"
+                  id="preview"
+                  onClick={videoMedia ? togglePlayVideo : undefined}
+                  style={{ cursor: videoMedia ? 'pointer' : 'default', position: 'relative' }}
+                >
                   {videoMedia ? (
                     <>
                       <video
                         ref={videoRef}
                         src={videoMedia.url}
-                        controls
                         playsInline
+                        preload="auto"
+                        onClick={togglePlayVideo}
                         onTimeUpdate={handleTimeUpdate}
                         onPlay={handlePlay}
                         onPause={handlePause}
                         onLoadedMetadata={() => {
-                          if (videoRef.current) setDuration(videoRef.current.duration);
+                          if (videoRef.current) {
+                            const dur = videoRef.current.duration || 0;
+                            if (dur > 0 && isFinite(dur)) {
+                              setDuration(dur);
+                              setVideoMedia((prev) => (prev ? { ...prev, duration: dur } : null));
+                            }
+                          }
+                        }}
+                        onDurationChange={() => {
+                          if (videoRef.current) {
+                            const dur = videoRef.current.duration || 0;
+                            if (dur > 0 && isFinite(dur)) {
+                              setDuration(dur);
+                              setVideoMedia((prev) => (prev ? { ...prev, duration: dur } : null));
+                            }
+                          }
+                        }}
+                        onCanPlay={() => {
+                          if (videoRef.current) {
+                            const dur = videoRef.current.duration || 0;
+                            if (dur > 0 && isFinite(dur)) {
+                              setDuration(dur);
+                              setVideoMedia((prev) => (prev ? { ...prev, duration: dur } : null));
+                            }
+                          }
                         }}
                       />
+
+                      {/* Center Play Overlay Button when paused */}
+                      {!isPlaying && (
+                        <button
+                          type="button"
+                          className="preview-play-btn"
+                          onClick={togglePlayVideo}
+                          aria-label="Play video"
+                          title="Play video"
+                        >
+                          ▶
+                        </button>
+                      )}
 
                       {/* Subtitle Overlay */}
                       {displayCaption && (
@@ -1407,6 +1532,67 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Dedicated Video Controls Bar */}
+                {videoMedia && (
+                  <div className="preview-controls-bar">
+                    <button
+                      type="button"
+                      className="ghost"
+                      style={{ padding: '6px 12px', fontSize: 13, minWidth: 42 }}
+                      onClick={togglePlayVideo}
+                      aria-label={isPlaying ? 'Pause video' : 'Play video'}
+                      title={isPlaying ? 'Pause video' : 'Play video'}
+                    >
+                      {isPlaying ? '❚❚' : '▶'}
+                    </button>
+
+                    <input
+                      type="range"
+                      className="preview-scrubber"
+                      min={0}
+                      max={activeDuration || 1}
+                      step={0.1}
+                      value={currentTime}
+                      onChange={(e) => {
+                        const t = parseFloat(e.target.value);
+                        setCurrentTime(t);
+                        if (videoRef.current) videoRef.current.currentTime = t;
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = Math.max(0, t + audioSettings.syncOffset);
+                        }
+                      }}
+                    />
+
+                    <span style={{ fontSize: 11, color: '#c9cbd5', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                      {formatTimecode(currentTime)} / {formatTimecode(activeDuration)}
+                    </span>
+
+                    <button
+                      type="button"
+                      className="ghost"
+                      style={{ padding: '6px 10px', fontSize: 12 }}
+                      onClick={() => {
+                        if (!videoRef.current) return;
+                        videoRef.current.muted = !videoRef.current.muted;
+                      }}
+                      title="Mute / Unmute"
+                    >
+                      {videoRef.current?.muted ? '🔇' : '🔊'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="ghost"
+                      style={{ padding: '6px 10px', fontSize: 12 }}
+                      onClick={handleFullscreen}
+                      title="Fullscreen preview"
+                      aria-label="Fullscreen"
+                    >
+                      ⛶
+                    </button>
+                  </div>
+                )}
+
                 {/* Caption Timeline */}
                 <div className="timeline">
                   <div className="card-head">
@@ -1449,7 +1635,7 @@ export default function App() {
                     >
                       ＋ Add caption at playhead
                     </button>
-                    <span>{formatTimecode(duration)}</span>
+                    <span>{formatTimecode(activeDuration)}</span>
                   </div>
                 </div>
               </div>
