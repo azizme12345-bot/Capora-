@@ -363,6 +363,35 @@ export default function App() {
     setStatusMessage('Loaded NAMO KHOJ KHOJ news captions in Roman Urdu.');
   };
 
+  // Load sample demo video with 1 click
+  const handleLoadSampleVideo = async () => {
+    setStatusMessage('Loading sample video...');
+    try {
+      const res = await fetch('/sample.mp4');
+      const blob = await res.blob();
+      const file = new File([blob], 'namo_khoj_khoj_demo.mp4', { type: 'video/mp4' });
+      await handleFileUpload(file, 'video');
+      handleLoadModiNewsSample();
+      setProjectName('NAMO KHOJ KHOJ News');
+      setStatusMessage('Demo video loaded with NAMO KHOJ KHOJ news captions!');
+    } catch (err) {
+      console.warn('Sample video load error:', err);
+      setVideoMedia({
+        id: 'sample_video_1',
+        filename: 'sample.mp4',
+        originalName: 'namo_khoj_khoj_demo.mp4',
+        size: 70000,
+        duration: 4,
+        hasVideo: true,
+        hasAudio: true,
+        url: '/sample.mp4',
+        serverUploaded: false,
+      });
+      setDuration(4);
+      handleLoadModiNewsSample();
+    }
+  };
+
   // AI Caption Generation with browser audio extraction fallback
   const handleGenerateCaptions = async () => {
     if (!videoMedia && !audioMedia) {
@@ -1171,27 +1200,64 @@ export default function App() {
 
                   <div className="upload-actions">
                     {importMode !== 'audio' && (
-                      <label className="file-label">
+                      <button
+                        type="button"
+                        className="file-label"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (videoInputRef.current) {
+                            videoInputRef.current.value = '';
+                            videoInputRef.current.click();
+                          }
+                        }}
+                      >
                         ＋ Choose video
-                        <input
-                          ref={videoInputRef}
-                          type="file"
-                          accept="video/*"
-                          onChange={handleSelectVideoFile}
-                        />
-                      </label>
+                      </button>
                     )}
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept="video/*,video/mp4,video/quicktime,video/webm,video/3gpp,video/x-matroska"
+                      style={{ display: 'none' }}
+                      onChange={handleSelectVideoFile}
+                    />
+
                     {(importMode === 'audio' || importMode === 'both') && (
-                      <label className="file-label">
+                      <button
+                        type="button"
+                        className="file-label"
+                        id="audioLabel"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (audioInputRef.current) {
+                            audioInputRef.current.value = '';
+                            audioInputRef.current.click();
+                          }
+                        }}
+                      >
                         ♫ Choose audio
-                        <input
-                          ref={audioInputRef}
-                          type="file"
-                          accept="audio/*"
-                          onChange={handleSelectAudioFile}
-                        />
-                      </label>
+                      </button>
                     )}
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      accept="audio/*,audio/mpeg,audio/wav,audio/m4a,audio/mp3,audio/ogg"
+                      style={{ display: 'none' }}
+                      onChange={handleSelectAudioFile}
+                    />
+
+                    <button
+                      type="button"
+                      className="file-label"
+                      style={{ background: '#241b3f', borderColor: '#6653a5', color: '#e5ddff' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleLoadSampleVideo();
+                      }}
+                      title="Load sample video with Narendra Modi NAMO KHOJ KHOJ news captions"
+                    >
+                      ▶ Load Sample Video
+                    </button>
                   </div>
 
                   {uploadError && (
